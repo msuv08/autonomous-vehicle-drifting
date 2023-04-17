@@ -76,9 +76,12 @@ def write_train_data(imu_delay, cam_delay, odom_delay, subfolder):
         joystick.append([jv,jc])
         # ev = get_value_at_time(t+cam_delay, cam_data[0], cam_data[1])
         # ec = get_value_at_time(t+cam_delay, cam_data[0], cam_data[5])
+        gv = get_value_at_time(t, joystick_data[0], joystick_data[1])
+        gc = get_value_at_time(t, joystick_data[0], joystick_data[3])
         # if abs(ec) > abs(jc*1.5):
         #     ec = joystick[-1][1]
-        # executed.append([ev, ec])
+        executed.append([gv, gc])
+        # ground truth should have velocity, curvature tuples
         imu_accel_gyro.append(list(get_imu_data_at_time(t+imu_delay, imu_data[0], imu_accel, imu_gyro)))
         # print(imu_accel_gyro[0])
 
