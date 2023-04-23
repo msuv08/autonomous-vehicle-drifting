@@ -43,34 +43,20 @@ def get_imu_data_at_time(time, imu_time, imu_accel, imu_gyro, s = 1):
 def write_train_data(imu_delay, subfolder):
     
     imu_data = extract_imu_data("./" + subfolder+ "/_slash_vectornav_slash_IMU.csv")
-    joystick_data = extract_joystick_data(subfolder)
-    velocities = joystick_data[1]
-    # start, end, starti, endi = find_start_and_end_time(joystick_data[0], joystick_data[1])
-    # print("start: ", start, " end: ", end)
+    
+    joystick_times, velocities, rot_vel = extract_joystick_data(subfolder)
     start = 0
-    end = min(imu_data[0][-1], joystick_data[0][-1])
-    time_points = np.linspace(start + 2, end, 8000)
+    end_time = int(min(imu_data[0][-1], joystick_times[-1]))
+
+    time_points = np.linspace(0, end_time, end_time * 20 + 1)
     joystick = []
     executed = []
-    imu_accel_gyro = []
-    print(joystick_data[2])
     for t in time_points:
-        # joystick velocity and curvature
-        # jv = get_value_at_time(t+odom_delay, joystick_data[0], joystick_data[1])
-        # jc = get_value_at_time(t+odom_delay, joystick_data[0], joystick_data[3])
-        jv = get_value_at_time(t, joystick_data[0], velocities)
-        av = get_value_at_time(t+imu_delay, imu_data[0], imu_data[1])
-        joystick.append([jv,av])
-        # ground truth velocity
-        # ground truth angular velocity labels
-        ja = get_value_at_time(t, joystick_data[0], joystick_data[2])
-        # gc = get_value_at_time(t, joystick_data[0], joystick_data[3])
-
-        # we have the ground truth curvature: use imu_data[1] (angular velocities)
-        # curvature = 1/r. so w/v = curvature 
-        executed.append([ja])
-        # l = list(get_imu_data_at_time(t + imu_delay, imu_data[0], imu_accel, imu_gyro))
-        # imu_accel_gyro.append(l)
+        jv = get_value_at_time(t, joystick_times, velocities)
+        jav = get_value_at_time(t, joystick_times, rot_vel)
+        joystick.append([jv,jav])
+        t_av = get_value_at_time(t + imu_delay, imu_data[0], imu_data[1])
+        executed.append([t_av])
     
     training_data = pd.DataFrame()
     training_data["joystick"] = list(joystick)
@@ -78,7 +64,6 @@ def write_train_data(imu_delay, subfolder):
     # We will give it joystick velocity for now and use that as the ground truth velocity.
     # To do this, we can use extract joystick data function and use the velocity data.
     training_data["executed"] = list(executed) #probably correct
-    # training_data["imu"] = list(imu_accel_gyro)
     data_file = "./dataset/ikddata2.csv"
     training_data.to_csv(data_file)
 
@@ -139,4 +124,4 @@ if __name__ == "__main__":
     # imu_delay = align(subfolder)
     # print("imu delay:", imu_delay)
 
-    write_train_data(imu_delay,"ikddata2")   
+    write_train_data(imu_delay,"ikddata2")
