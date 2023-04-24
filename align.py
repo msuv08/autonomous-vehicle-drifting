@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 import math
-from math_helpers import get_value_at_time, euler_from_quaternion, subt_poses
+from math_helpers import get_value_at_time
 from extractors import extract_imu_data, extract_joystick_data, find_start_and_end_time
 
 # NOTE: changed to match UT Automata car.
@@ -24,6 +24,7 @@ wheelbase = 0.324
 
 # given a time, return how many seconds it is from the start of the bag
 # s is the number of seconds to look back, default is 1 second meaning 40 data points
+
 def get_imu_data_at_time(time, imu_time, imu_accel, imu_gyro, s = 1):
     imu_hz = 40
     window_size = s * imu_hz
@@ -45,9 +46,7 @@ def write_train_data(imu_delay, subfolder):
     imu_data = extract_imu_data("./" + subfolder+ "/_slash_vectornav_slash_IMU.csv")
     
     joystick_times, velocities, rot_vel = extract_joystick_data(subfolder)
-    start = 0
     end_time = int(min(imu_data[0][-1], joystick_times[-1]))
-
     time_points = np.linspace(0, end_time, end_time * 20 + 1)
     joystick = []
     executed = []
@@ -80,11 +79,10 @@ def align(subfolder):
         
         # extract IMU data
         imu_data = extract_imu_data("./"+subfolder+"/_slash_vectornav_slash_IMU.csv")
-
+        joystick_times, velocities, rot_vel = extract_joystick_data(subfolder)
         # Compute delay
-        end_time = int(min(joystick_data[0][-1], imu_data[0][-1]))
-        print(end_time)
-        time_points = np.linspace(0, end_time, 8000)
+        end_time = int(min(imu_data[0][-1], joystick_times[-1]))
+        time_points = np.linspace(0, end_time, end_time * 20 + 1)
         delay_options = np.linspace(-1, 1, 1001)
 
         best_cmd_w = []
@@ -121,7 +119,8 @@ if __name__ == "__main__":
         odom_delay = -0.588
 
     # NOTE: fixed align to be purely IMU/Joystick (omeed)
-    # imu_delay = align(subfolder)
-    # print("imu delay:", imu_delay)
+
+    imu_delay = align(subfolder)
+    print("imu delay:", imu_delay)
 
     write_train_data(imu_delay,"ikddata2")
