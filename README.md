@@ -2,7 +2,7 @@
 
 ## Introduction
 
-In this work, we seek to learn an inverse kinodynamic function that can be used to predict corrected (tightened) control inputs from the slip of a drift. We leverage on-board intertial readings from a vectornav IMU and a simple compact neural network as our learned function approximator for the inverse kinodynamic model at test-time. 
+In this work, we seek to learn an inverse kinodynamic function that can be used to predict corrected (tightened) angular velocity control inputs from the slip of a drift. We leverage on-board intertial readings from a vectornav IMU and a simple compact neural network as our learned function approximator for the inverse kinodynamic model at test-time. 
 
 ## Model Architecture 
 
