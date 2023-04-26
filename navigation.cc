@@ -20,6 +20,7 @@
 //========================================================================
 
 #include "gflags/gflags.h"
+#include <ctime>
 #include "eigen3/Eigen/Dense"
 #include "eigen3/Eigen/Geometry"
 #include "amrl_msgs/AckermannCurvatureDriveMsg.h"
@@ -35,6 +36,7 @@
 #include "visualization/visualization.h"
 #include <torch/script.h>
 #include "iostream"
+#include <cmath>
 
 using Eigen::Vector2f;
 using amrl_msgs::AckermannCurvatureDriveMsg;
@@ -45,7 +47,7 @@ using std::vector;
 using namespace math_util;
 using namespace ros_helpers;
 torch::jit::script::Module module; 
-
+static int current_line_num_;
 
 
 DEFINE_double(cp1_distance, 2.5, "Distance to travel for 1D TOC (cp1)");
@@ -70,7 +72,8 @@ string GetMapFileFromName(const string& map) {
   return maps_dir_ + "/" + map + "/" + map + ".vectormap.txt";
 }
 
-Navigation::Navigation(const string& map_name, ros::NodeHandle* n) :
+Navigation::Navigation(const string& map_name, ros::NodeHandle* n, const string& joystick_mappings) :
+    
     odom_initialized_(false),
     localization_initialized_(false),
     robot_loc_(0, 0),
@@ -99,6 +102,23 @@ Navigation::Navigation(const string& map_name, ros::NodeHandle* n) :
     // sys.exit(-1)
   }
   std::cout << "Model loading finished\n";
+
+  // Read in text file for joystick mappings (changed code, passed by constructor)
+  std::ifstream mappings_file(joystick_mappings);
+  std::string line;
+  // Populate lines with all the text file input.
+  if (mappings_file.is_open()) {
+    std::string line;
+    while (std::getline(mappings_file, line)) {
+      lines.push_back(line);
+    }
+    mappings_file.close();
+  } else {
+    ROS_ERROR_STREAM("Failed to open joystick mappings file: " << joystick_mappings);
+  }
+  // Set current line number to 0.
+  current_line_num_ = 0;
+
 }
 
 void Navigation::SetNavGoal(const Vector2f& loc, float angle) {
@@ -133,63 +153,85 @@ void Navigation::ObservePointCloud(const vector<Vector2f>& cloud,
   point_cloud_ = cloud;                                     
 }
 
+// this function gets called 20 times a second to form the control loop.
 void Navigation::Run() {
-  // This function gets called 20 times a second to form the control loop.
-  
-  // Clear previous visualizations.
-  visualization::ClearVisualizationMsg(local_viz_msg_);
-  visualization::ClearVisualizationMsg(global_viz_msg_);
+    // Clear previous visualizations.
+    visualization::ClearVisualizationMsg(local_viz_msg_);
+    visualization::ClearVisualizationMsg(global_viz_msg_);
 
-  // If odometry has not been initialized, we can't do anything.
-  if (!odom_initialized_) return;
+    if (!odom_initialized_) return;
 
-  // The control iteration goes here. 
-  // Feel free to make helper functions to structure the control appropriately.
-  
-  // The latest observed point cloud is accessible via "point_cloud_"
+    int current_line_num_copy_ = current_line_num_;
+    for (std::list<std::string>::iterator it = lines.begin(); it != lines.end(); ++it) {
+      if (current_line_num_copy_  > 0) {
+        // Skip the lines that have already been read
+        current_line_num_copy_--;
+        continue;
+      }
+      // Access the next line in the list
+      std::string line = *it;
+      std::string value1 = line.substr(1, line.find(",") - 1);
+      std::string value2 = line.substr(line.find(",") + 2, line.length() - line.find(",") - 3);
+      float double_value1 = std::stof(value1);
+      float double_value2 = std::stof(value2);
+      // std::cout << "Value 1: " << double_value1 << ", Value 2: " << double_value2 << std::endl;
+      float curvature = 0.0;
+      if (double_value1 == 0.0) {
+        curvature = 0.0;
+      } else {
+        curvature = double_value2 / double_value1;
+      }
+      drive_msg_.velocity = double_value1;
+      drive_msg_.curvature = curvature;
+      
+      // Save the current line number
+      current_line_num_++;
+      std::cout << current_line_num_ << std::endl;
 
-  // Eventually, you will have to set the control values to issue drive commands:
-  float curvature = 0.57;
-  float velocity = 2.0;
+      // Break out of the loop after reading one line
+      break;
 
-  // Model Loading in here
-  float r = 1 / curvature;
-  float angular_velocity = velocity / r;
-  float norm_linear_velocity = velocity;
-  float norm_ang_velocity = angular_velocity;
-  std::vector<float> input = {norm_linear_velocity, norm_ang_velocity};
-  at::Tensor tensor = torch::from_blob(input.data(), {1, 2}, torch::kFloat32);
-  std::vector<torch::jit::IValue> inputs;
-  inputs.push_back(tensor);
-  // std::cout << tensor << std::endl;
-  // Run the model
-  at::Tensor output = module.forward(inputs).toTensor();
-  // std::cout << output << std::endl;
-  float out = *output[0].data_ptr<float>();
-  // std::cout << out << std::endl;
-  float corr_curvature;
-  if (velocity != 0) {
-    corr_curvature = out / r;
-  } else {
-    corr_curvature = 0;
+    }
+    // Custom timestamp and quick publish for drive node
+    drive_msg_.header.stamp = ros::Time::now();
+    drive_pub_.publish(drive_msg_);
+    // Add timestamps to all messages.
+    // local_viz_msg_.header.stamp = ros::Time::now();
+    // global_viz_msg_.header.stamp = ros::Time::now();
+    // drive_msg_.header.stamp = ros::Time::now();
+
+    // Publish messages.
+    // viz_pub_.publish(local_viz_msg_);
+    // viz_pub_.publish(global_viz_msg_);
+    // drive_pub_.publish(drive_msg_);
+
+
+
+
+    // IKD CODE:
+
+    // float curvature = 0.8;
+    // float velocity = 2.0;
+    // float angular_velocity = velocity * curvature;
+    // float input_velocity = velocity;
+    // std::vector<float> input = {input_velocity, angular_velocity};
+    // at::Tensor tensor = torch::from_blob(input.data(), {1, 2}, torch::kFloat32);
+    // std::vector<torch::jit::IValue> inputs;
+    // inputs.push_back(tensor);
+    // std::cout << tensor << std::endl;
+    // // run the model
+    // at::Tensor output = module.forward(inputs).toTensor();
+    // std::cout << output << std::endl;
+    // float out = *output[0].data_ptr<float>();
+    // // std::cout << out << std::endl;
+    // float corr_curvature;
+    // if (velocity != 0) {
+    // 	corr_curvature = out / velocity;
+    // } else {
+    // 	corr_curvature = 0;
+    // }
+    // drive_msg_.velocity = velocity;
+    // drive_msg_.curvature = corr_curvature;
   }
-  // Publish the corrected curvatures and velocity
-  // WITH IKD
-  drive_msg_.velocity = velocity;
-  drive_msg_.curvature = corr_curvature;
-  
-  // WITHOUT IKD
-  // drive_msg_.velocity = velocity;
-  // drive_msg_.curvature = curvature;
-
-  // Add timestamps to all messages.
-  local_viz_msg_.header.stamp = ros::Time::now();
-  global_viz_msg_.header.stamp = ros::Time::now();
-  drive_msg_.header.stamp = ros::Time::now();
-  // Publish messages.
-  viz_pub_.publish(local_viz_msg_);
-  viz_pub_.publish(global_viz_msg_);
-  drive_pub_.publish(drive_msg_);
 }
 
-}  // namespace navigation
